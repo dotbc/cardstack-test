@@ -1,76 +1,65 @@
-const axios = require('axios')
-const needle = require('needle')
 const got = require('got')
-const superagent = require('superagent')
+const asyncPool = require('tiny-async-pool')
 
-const JIRA_URL = 'https://dotbc.atlassian.net/rest/api/3/issue'
-const JIRA_USER = 'ryan@verifi.media'
-const JIRA_PASSWORD = 'zHYdaW6xVcVLjtGWeGX757F7'
+const CS_URL = 'http://localhost:3000/api/realms/default/cards'
 
-const params = {
-  fields: {
-    summary: '[ERROR] test',
-    project: {
-      key: 'VBT'
-    },
-    description: {
-      version: 1,
-      type: 'doc',
-      content: [
-        {
-          type: 'paragraph',
-          content: [
-            {
-              type: 'text',
-              text: '{"foo": "bar"}',
-              marks: [
-                {
-                  type: 'code'
-                }
-              ]
-            }
-          ]
-        }
-      ]
-    },
-    issuetype: {
-      name: 'Bug'
-    }
-  }
-}
+const NUMBER_OF_ITERATIONS = 1000
+
+const CONCURRENCY = 5
 
 const run = async () => {
+  const params = {
+    data: {
+      type: 'cards',
+      attributes: {
+        csTitle: 'test1234',
+        csFields: {},
+        csCreated: '2020-11-05T16:54:52.782Z',
+        csUpdated: '2020-11-05T16:54:52.782Z',
+        csRealm: 'http://localhost:3000/api/realms/default'
+      },
+      relationships: {
+        csAdoptsFrom: {
+          data: {
+            type: 'cards',
+            id: 'https://base.cardstack.com/public/cards/base'
+          }
+        }
+      }
+    }
+  }
   const headers = {
-    Authorization:
-      'Basic ' + Buffer.from(`${JIRA_USER}:${JIRA_PASSWORD}`).toString('base64')
+    'Content-type': 'application/vnd.api+json'
   }
-  let res = await got.post(JIRA_URL, {
-    headers,
-    json: params,
-    throwHttpErrors: false
-  })
-  console.log('[GOT] ', res.statusCode, res.body)
-
-  res = await superagent
-    .post(JIRA_URL)
-    .auth(JIRA_USER, JIRA_PASSWORD)
-    .send(params)
-  console.log('[SUPERAGENT] ', res.statusCode, res.body)
-
-  try {
-    res = await axios.post(JIRA_URL, params, {
-      headers
+  const insertCard = async () => {
+    await got.post(CS_URL, {
+      headers,
+      json: params,
+      throwHttpErrors: true
     })
-    console.log('[AXIOS] ', res.status, res.data)
-  } catch (err) {
-    console.log('[AXIOS] ', err.response.status, err.response.data)
   }
-  res = await needle('post', JIRA_URL, params, {
-    json: true,
-    username: JIRA_USER,
-    password: JIRA_PASSWORD
-  })
-  console.log('[NEEDLE] ', res.statusCode, res.body)
+
+  /*console.time(`[${NUMBER_OF_ITERATIONS} items] Bench CSv2 simple card insert`)
+
+  for (let i = 0; i < NUMBER_OF_ITERATIONS; i++) {
+    await insertCard()
+  }
+
+  console.timeEnd(
+    `[${NUMBER_OF_ITERATIONS} items] Bench CSv2 simple card insert`
+  )*/
+
+  console.time(
+    `[${NUMBER_OF_ITERATIONS} items] Bench CSv2 simple parallel card insert`
+  )
+
+  const action = insertCard
+  await asyncPool(CONCURRENCY, Array(NUMBER_OF_ITERATIONS).fill(), action)
+
+  console.timeEnd(
+    `[${NUMBER_OF_ITERATIONS} items] Bench CSv2 simple parallel card insert`
+  )
+  console.log('finish')
 }
 
 run()
